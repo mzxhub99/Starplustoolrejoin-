@@ -18,7 +18,7 @@ W='\033[1;37m'; D='\033[2m'; N='\033[0m'
 mkdir -p "$TMP_DIR"
 : > "$LOG"
 
-TOTAL=6
+TOTAL=7
 CURRENT=0
 
 # ---------- UI ----------
@@ -82,9 +82,32 @@ run() {
 }
 
 # ---------- งานแต่ละขั้น ----------
+step_mirror() {
+  # ตั้ง mirror อัตโนมัติ (แทน termux-change-repo) ลองทีละตัวจนกว่าจะใช้ได้
+  local list="$PREFIX/etc/apt/sources.list"
+  [ -f "$list.star-bak" ] || cp "$list" "$list.star-bak" 2>/dev/null
+  local m
+  for m in \
+    "https://packages-cf.termux.dev/apt/termux-main" \
+    "https://packages.termux.dev/apt/termux-main" \
+    "https://grimler.se/termux/termux-main"; do
+    echo "deb $m stable main" > "$list"
+    rm -rf "$PREFIX/var/lib/apt/lists/"* 2>/dev/null
+    if apt-get update -y; then
+      echo "mirror ok: $m"
+      return 0
+    fi
+  done
+  # ทุก mirror ล้มเหลว คืนค่าเดิม
+  [ -f "$list.star-bak" ] && cp "$list.star-bak" "$list"
+  return 1
+}
+
 step_update() {
   export DEBIAN_FRONTEND=noninteractive
-  pkg update -y -o Dpkg::Options::="--force-confnew"
+  pkg update -y -o Dpkg::Options::="--force-confnew" || return 1
+  # อัปเกรดทั้งระบบ กัน curl ใหม่ชนกับ openssl เก่า (partial upgrade)
+  pkg upgrade -y -o Dpkg::Options::="--force-confnew"
 }
 
 step_packages() {
@@ -147,6 +170,7 @@ trap cleanup EXIT
 banner
 echo -e "  ${W}กำลังติดตั้ง อาจใช้เวลา 3-4 นาที...${N}\n"
 
+run "ตั้งค่า mirror อัตโนมัติ"   step_mirror
 run "อัปเดตแพ็คเกจ"            step_update
 run "ติดตั้ง python / curl / unzip" step_packages
 run "ค้นหาเวอร์ชันล่าสุด"       step_find_release
